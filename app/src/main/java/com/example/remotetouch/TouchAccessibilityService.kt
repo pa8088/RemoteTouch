@@ -54,8 +54,9 @@ class TouchAccessibilityService : AccessibilityService(), TouchSimulator {
     }
 
     override fun move(x: Int, y: Int) {
-        // 移动光标(可选实现,某些场景不需要)
         Log.d(TAG, "移动: ($x, $y)")
+        // 更新屏幕光标位置
+        CursorOverlayService.updateCursorPosition(x, y)
     }
 
     override fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long) {
