@@ -55,7 +55,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startService() {
-        // 检查无障碍服务
         if (!isAccessibilityServiceEnabled()) {
             AlertDialog.Builder(this)
                 .setTitle("需要无障碍服务")
@@ -68,12 +67,29 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val intent = Intent(this, RemoteTouchForegroundService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            AlertDialog.Builder(this)
+                .setTitle("需要悬浮窗权限")
+                .setMessage("需要悬浮窗权限来显示光标")
+                .setPositiveButton("去设置") { _, _ ->
+                    val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                    intent.data = Uri.parse("package:$packageName")
+                    startActivity(intent)
+                }
+                .setNegativeButton("取消", null)
+                .show()
+            return
         }
+
+        val serviceIntent = Intent(this, RemoteTouchForegroundService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+
+        val cursorIntent = Intent(this, CursorOverlayService::class.java)
+        startService(cursorIntent)
 
         updateStatus()
     }
@@ -81,6 +97,10 @@ class MainActivity : AppCompatActivity() {
     private fun stopService() {
         val intent = Intent(this, RemoteTouchForegroundService::class.java)
         stopService(intent)
+        
+        val cursorIntent = Intent(this, CursorOverlayService::class.java)
+        stopService(cursorIntent)
+        
         updateStatus()
     }
 
@@ -108,7 +128,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkPermissions() {
-        // 请求电池优化豁免
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
             if (!pm.isIgnoringBatteryOptimizations(packageName)) {
@@ -155,10 +174,13 @@ class MainActivity : AppCompatActivity() {
             append("1. 【开启无障碍服务】\n")
             append("   设置 → 无障碍 → 已下载的服务 → 远程触摸控制 → 开启\n\n")
 
-            append("2. 【关闭电池优化】\n")
+            append("2. 【允许悬浮窗】\n")
+            append("   设置 → 应用 → 远程触摸控制 → 显示在其他应用上层 → 允许\n\n")
+
+            append("3. 【关闭电池优化】\n")
             append("   设置 → 电池 → 电池优化 → 远程触摸控制 → 不优化\n\n")
 
-            append("3. 【允许后台运行】\n")
+            append("4. 【允许后台运行】\n")
             when {
                 manufacturer.contains("xiaomi") -> {
                     append("   设置 → 应用设置 → 应用管理 → 远程触摸控制\n")
@@ -180,7 +202,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            append("\n4. 【锁定后台】\n")
+            append("\n5. 【锁定后台】\n")
             append("   最近任务界面 → 下拉本应用 → 锁定\n\n")
 
             append("完成以上设置后,服务将稳定运行不被杀死!")
@@ -196,11 +218,9 @@ class MainActivity : AppCompatActivity() {
     private fun checkAndShowStatus() {
         val results = mutableListOf<String>()
 
-        // 1. 无障碍服务
         val isAccessibilityEnabled = isAccessibilityServiceEnabled()
         results.add("${if (isAccessibilityEnabled) "✓" else "✗"} 无障碍服务")
 
-        // 2. 电池优化
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         val isBatteryOptimized = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             pm.isIgnoringBatteryOptimizations(packageName)
@@ -209,15 +229,21 @@ class MainActivity : AppCompatActivity() {
         }
         results.add("${if (isBatteryOptimized) "✓" else "✗"} 电池优化豁免")
 
-        // 3. 通知权限
+        val canDrawOverlays = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.canDrawOverlays(this)
+        } else {
+            true
+        }
+        results.add("${if (canDrawOverlays) "✓" else "✗"} 悬浮窗权限")
+
         val isNotificationEnabled = NotificationManagerCompat.from(this).areNotificationsEnabled()
         results.add("${if (isNotificationEnabled) "✓" else "✗"} 通知权限")
 
-        // 4. 前台服务
         val isServiceRunning = RemoteTouchForegroundService.isRunning()
         results.add("${if (isServiceRunning) "✓" else "✗"} 前台服务运行")
 
-        val allOk = isAccessibilityEnabled && isBatteryOptimized && isNotificationEnabled && isServiceRunning
+        val allOk = isAccessibilityEnabled && isBatteryOptimized && canDrawOverlays && 
+                    isNotificationEnabled && isServiceRunning
 
         val message = results.joinToString("\n") + "\n\n" +
                 if (allOk) "✅ 所有检查通过,服务正常运行!"
